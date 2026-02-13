@@ -1,0 +1,1053 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000000000000000000000000000000000000..47289482b01b8b01092947153a0c1a96abc03105
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,6 @@
++node_modules/
++dist/
++.vite/
++.DS_Store
++*.log
++src-tauri/target/
+diff --git a/README.md b/README.md
+index dbd8533aba5e4b60555afa4406f23484003d5be6..fe9979be7c418a0c9728a14913afa03e5ceac0d8 100644
+--- a/README.md
++++ b/README.md
+@@ -1,2 +1,148 @@
+-# ManjaWord
+-# ManjaWord
++# ManjaWord-Rust
++
++ManjaWord-Rust is a production-focused, lightweight, secure Word-like desktop editor built with **Tauri + Rust + React + Quill**. It uses the operating system's native WebView (instead of bundled Chromium) to drastically reduce bundle size and memory use compared to Electron apps.
++
++## Features
++
++- Rich text editor powered by Quill.js
++- Bold, italic, underline
++- Font family, font size, headings (H1-H6)
++- Alignment (left/center/right/justify)
++- Bullet + numbered lists
++- Undo / redo
++- Word count status bar
++- Light / dark mode toggle
++- Grammar toggle (offline LanguageTool integration)
++- File operations: New, Open, Save, Export DOCX, Export PDF
++- Autosave every 30 seconds and recovery on restart
++
++## Architecture
++
++```text
+++------------------------------+
++| React + Quill Frontend       |
++| - UI, formatting, status bar |
++| - No filesystem access       |
+++--------------+---------------+
++               | secure invoke()
+++--------------v---------------+
++| Tauri IPC Command Layer      |
++| open_file / save_file        |
++| export_docx / export_pdf     |
++| grammar_check / autosave     |
+++--------------+---------------+
++               |
+++--------------v---------------+
++| Rust Backend                 |
++| file_handler.rs              |
++| exporter.rs                  |
++| grammar.rs                   |
++| autosave.rs                  |
+++--------------+---------------+
++               |
+++--------------v---------------+
++| OS APIs / Local Services     |
++| Native file dialog           |
++| Filesystem via Rust std::fs  |
++| Local LanguageTool :8081     |
+++------------------------------+
++```
++
++## Security model
++
++- Frontend never touches disk APIs directly.
++- All file operations are mediated by backend `#[tauri::command]` handlers.
++- Save/Open paths are user-selected via native dialogs.
++- Path validation blocks invalid control characters and enforces `.manjaword.json` extension.
++- Content Security Policy in `tauri.conf.json` allows only local app content + localhost LanguageTool endpoint.
++- Minimal Tauri capability permissions (`core`, `dialog open/save`) are enabled; unnecessary permissions are not granted.
++- Grammar checks stay local by default (`http://localhost:8081`) to avoid cloud transmission.
++
++## Project structure
++
++```text
++ManjaWord-Rust/
++├── src/
++│   ├── components/
++│   ├── App.jsx
++│   ├── main.jsx
++│   └── styles/
++├── src-tauri/
++│   ├── src/
++│   │   ├── main.rs
++│   │   ├── file_handler.rs
++│   │   ├── exporter.rs
++│   │   ├── grammar.rs
++│   │   └── autosave.rs
++│   ├── Cargo.toml
++│   └── tauri.conf.json
++├── package.json
++├── vite.config.js
++└── README.md
++```
++
++## Prerequisites (Manjaro Linux)
++
++Install base packages:
++
++```bash
++sudo pacman -Syu
++sudo pacman -S --needed base-devel curl wget file openssl gtk3 webkit2gtk-4.1 libayatana-appindicator librsvg
++```
++
++Install Node.js + npm:
++
++```bash
++sudo pacman -S --needed nodejs npm
++```
++
++### Install Rust
++
++```bash
++curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
++source "$HOME/.cargo/env"
++rustup default stable
++```
++
++### Install Tauri prerequisites
++
++```bash
++cargo install tauri-cli --locked
++```
++
++## Development
++
++```bash
++npm install
++npm run tauri dev
++```
++
++## Production build
++
++```bash
++npm run build
++npm run tauri build
++```
++
++## Packaging targets
++
++Configured bundle targets:
++
++- Linux AppImage
++- macOS DMG/app bundle
++- Windows MSI/EXE distribution pipeline
++
++> Cross-platform support depends on building on each target OS or cross-compilation setup.
++
++## Running LanguageTool locally (offline grammar)
++
++1. Download LanguageTool server package.
++2. Start server on port `8081`:
++
++```bash
++java -cp languagetool-server.jar org.languagetool.server.HTTPServer --port 8081 --allow-origin
++```
++
++3. Keep server running while using grammar checks in ManjaWord-Rust.
++
++If the server is unavailable, ManjaWord fails gracefully and keeps editing features available.
+diff --git a/index.html b/index.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..adc3c911b208150d2328292635ddeec12f4488f9
+--- /dev/null
++++ b/index.html
+@@ -0,0 +1,12 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="UTF-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++    <title>ManjaWord-Rust</title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <script type="module" src="/src/main.jsx"></script>
++  </body>
++</html>
+diff --git a/package.json b/package.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..1b902c4d644736bee2daeac77bf2d5f0504158d6
+--- /dev/null
++++ b/package.json
+@@ -0,0 +1,23 @@
++{
++  "name": "manjaword-rust",
++  "private": true,
++  "version": "1.0.0",
++  "type": "module",
++  "scripts": {
++    "dev": "vite",
++    "build": "vite build",
++    "preview": "vite preview",
++    "tauri": "tauri"
++  },
++  "dependencies": {
++    "@tauri-apps/api": "^2.2.0",
++    "quill": "^2.0.3",
++    "react": "^18.3.1",
++    "react-dom": "^18.3.1"
++  },
++  "devDependencies": {
++    "@tauri-apps/cli": "^2.2.5",
++    "@vitejs/plugin-react": "^4.4.1",
++    "vite": "^5.4.11"
++  }
++}
+diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d9c790dfd0dd7da3a9662f070cdbb289aa60530
+--- /dev/null
++++ b/src-tauri/Cargo.toml
+@@ -0,0 +1,30 @@
++[package]
++name = "manjaword-rust"
++version = "1.0.0"
++description = "Lightweight secure word editor built with Tauri"
++authors = ["ManjaWord Team"]
++license = "MIT"
++repository = "https://github.com/example/manjaword-rust"
++edition = "2021"
++rust-version = "1.77"
++
++[build-dependencies]
++tauri-build = { version = "2.0.2", features = [] }
++
++[dependencies]
++tauri = { version = "2.2.5", features = [] }
++tauri-plugin-dialog = "2.2.1"
++serde = { version = "1", features = ["derive"] }
++serde_json = "1"
++thiserror = "2"
++chrono = { version = "0.4", features = ["serde"] }
++reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
++docx-rs = "0.4"
++printpdf = "0.7"
++regex = "1"
++
++tokio = { version = "1", features = ["sync"] }
++
++[features]
++default = ["custom-protocol"]
++custom-protocol = ["tauri/custom-protocol"]
+diff --git a/src-tauri/build.rs b/src-tauri/build.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..d860e1e6a7cac333c3cc0bc9cb67faf286b07d69
+--- /dev/null
++++ b/src-tauri/build.rs
+@@ -0,0 +1,3 @@
++fn main() {
++    tauri_build::build()
++}
+diff --git a/src-tauri/capabilities/default.json b/src-tauri/capabilities/default.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..4001a06f4eb152adfc90d32dfedb95c7dbf49de3
+--- /dev/null
++++ b/src-tauri/capabilities/default.json
+@@ -0,0 +1,11 @@
++{
++  "$schema": "../gen/schemas/desktop-schema.json",
++  "identifier": "default",
++  "description": "Minimal permissions for ManjaWord",
++  "windows": ["main"],
++  "permissions": [
++    "core:default",
++    "dialog:allow-open",
++    "dialog:allow-save"
++  ]
++}
+diff --git a/src-tauri/src/autosave.rs b/src-tauri/src/autosave.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..5b52d0aef31a8cc5e7fc49f7f12bb0d6482cc2f4
+--- /dev/null
++++ b/src-tauri/src/autosave.rs
+@@ -0,0 +1,60 @@
++use chrono::Utc;
++use serde::{Deserialize, Serialize};
++use serde_json::Value;
++use std::{fs, path::PathBuf};
++use tauri::{AppHandle, Manager};
++use thiserror::Error;
++
++#[derive(Debug, Serialize, Deserialize)]
++pub struct EditorDocument {
++    pub version: String,
++    pub updated_at: String,
++    pub content: Value,
++}
++
++impl EditorDocument {
++    pub fn new(content: Value) -> Self {
++        Self {
++            version: "1.0.0".to_string(),
++            updated_at: Utc::now().to_rfc3339(),
++            content,
++        }
++    }
++}
++
++#[derive(Debug, Error)]
++pub enum AutosaveError {
++    #[error("application data path unavailable")]
++    PathUnavailable,
++    #[error("io error: {0}")]
++    Io(#[from] std::io::Error),
++    #[error("json error: {0}")]
++    Json(#[from] serde_json::Error),
++}
++
++fn autosave_path(app: &AppHandle) -> Result<PathBuf, AutosaveError> {
++    let base = app
++        .path()
++        .app_local_data_dir()
++        .map_err(|_| AutosaveError::PathUnavailable)?;
++    fs::create_dir_all(&base)?;
++    Ok(base.join("autosave.manjaword.json"))
++}
++
++pub fn autosave_document(app: AppHandle, content: Value) -> Result<(), AutosaveError> {
++    let path = autosave_path(&app)?;
++    let payload = EditorDocument::new(content);
++    fs::write(path, serde_json::to_string_pretty(&payload)?)?;
++    Ok(())
++}
++
++pub fn recover_unsaved_document(app: AppHandle) -> Result<Option<EditorDocument>, AutosaveError> {
++    let path = autosave_path(&app)?;
++    if !path.exists() {
++        return Ok(None);
++    }
++
++    let raw = fs::read_to_string(path)?;
++    let parsed = serde_json::from_str::<EditorDocument>(&raw)?;
++    Ok(Some(parsed))
++}
+diff --git a/src-tauri/src/exporter.rs b/src-tauri/src/exporter.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ace9059c813e4812c0da94d12a5d3492775d4d2
+--- /dev/null
++++ b/src-tauri/src/exporter.rs
+@@ -0,0 +1,92 @@
++use docx_rs::{Docx, Paragraph, Run};
++use printpdf::{BuiltinFont, Mm, PdfDocument};
++use serde_json::Value;
++use std::{fs::File, io::BufWriter, path::PathBuf};
++use tauri::AppHandle;
++use tauri_plugin_dialog::DialogExt;
++use thiserror::Error;
++
++#[derive(Debug, Error)]
++pub enum ExportError {
++    #[error("no file selected")]
++    NoFile,
++    #[error("io error: {0}")]
++    Io(#[from] std::io::Error),
++    #[error("docx error: {0}")]
++    Docx(#[from] docx_rs::DocxError),
++}
++
++fn delta_to_lines(content: &Value) -> Vec<String> {
++    content
++        .get("ops")
++        .and_then(Value::as_array)
++        .map(|ops| {
++            ops.iter()
++                .filter_map(|op| op.get("insert").and_then(Value::as_str))
++                .flat_map(|txt| txt.split('\n').map(str::to_string).collect::<Vec<String>>())
++                .collect::<Vec<String>>()
++        })
++        .unwrap_or_default()
++}
++
++async fn pick_export_path(
++    app: &AppHandle,
++    ext: &str,
++    default_name: &str,
++) -> Result<PathBuf, ExportError> {
++    let (tx, rx) = tokio::sync::oneshot::channel();
++    app.dialog()
++        .file()
++        .add_filter(ext.to_uppercase(), &[ext])
++        .set_file_name(default_name)
++        .save_file(move |f| {
++            let _ = tx.send(f.and_then(|v| v.as_path().map(PathBuf::from)));
++        });
++
++    rx.await.ok().flatten().ok_or(ExportError::NoFile)
++}
++
++pub async fn export_docx(app: AppHandle, content: Value) -> Result<String, ExportError> {
++    let mut path = pick_export_path(&app, "docx", "document.docx").await?;
++    if path.extension().and_then(|e| e.to_str()) != Some("docx") {
++        path.set_extension("docx");
++    }
++
++    let lines = delta_to_lines(&content);
++    let mut doc = Docx::new();
++    for line in lines {
++        if !line.trim().is_empty() {
++            doc = doc.add_paragraph(Paragraph::new().add_run(Run::new().add_text(line)));
++        }
++    }
++
++    doc.build().pack(File::create(&path)?)?;
++    Ok(path.display().to_string())
++}
++
++pub async fn export_pdf(app: AppHandle, content: Value) -> Result<String, ExportError> {
++    let mut path = pick_export_path(&app, "pdf", "document.pdf").await?;
++    if path.extension().and_then(|e| e.to_str()) != Some("pdf") {
++        path.set_extension("pdf");
++    }
++
++    let (doc, page1, layer1) =
++        PdfDocument::new("ManjaWord Export", Mm(210.0), Mm(297.0), "Layer 1");
++    let layer = doc.get_page(page1).get_layer(layer1);
++    let font = doc.add_builtin_font(BuiltinFont::Helvetica)?;
++
++    let lines = delta_to_lines(&content);
++    let mut y = 280.0;
++    for line in lines {
++        if y < 15.0 {
++            break;
++        }
++        if !line.trim().is_empty() {
++            layer.use_text(line, 12.0, Mm(15.0), Mm(y), &font);
++            y -= 8.0;
++        }
++    }
++
++    doc.save(&mut BufWriter::new(File::create(&path)?))?;
++    Ok(path.display().to_string())
++}
+diff --git a/src-tauri/src/file_handler.rs b/src-tauri/src/file_handler.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..5f4fdbced19ce581bb09a106e4e0d95d8c030b91
+--- /dev/null
++++ b/src-tauri/src/file_handler.rs
+@@ -0,0 +1,92 @@
++use crate::autosave::EditorDocument;
++use regex::Regex;
++use serde::{Deserialize, Serialize};
++use std::fs;
++use std::path::{Path, PathBuf};
++use tauri::AppHandle;
++use tauri_plugin_dialog::DialogExt;
++use thiserror::Error;
++
++#[derive(Debug, Serialize, Deserialize)]
++pub struct OpenedDocument {
++    pub path: String,
++    pub content: serde_json::Value,
++}
++
++#[derive(Debug, Error)]
++pub enum FileError {
++    #[error("no file selected")]
++    NoFile,
++    #[error("invalid file extension: expected .manjaword.json")]
++    InvalidExtension,
++    #[error("path validation failed")]
++    InvalidPath,
++    #[error("io error: {0}")]
++    Io(#[from] std::io::Error),
++    #[error("json error: {0}")]
++    Json(#[from] serde_json::Error),
++}
++
++fn validate_path(path: &Path) -> Result<(), FileError> {
++    let clean = Regex::new(r"[\x00-\x1F]").map_err(|_| FileError::InvalidPath)?;
++    let as_str = path.to_string_lossy();
++    if clean.is_match(&as_str) {
++        return Err(FileError::InvalidPath);
++    }
++    if path.extension().and_then(|e| e.to_str()) != Some("json")
++        || !as_str.ends_with(".manjaword.json")
++    {
++        return Err(FileError::InvalidExtension);
++    }
++    Ok(())
++}
++
++async fn pick_open_path(app: &AppHandle) -> Result<PathBuf, FileError> {
++    let (tx, rx) = tokio::sync::oneshot::channel();
++    app.dialog()
++        .file()
++        .add_filter("ManjaWord", &["manjaword.json"])
++        .pick_file(move |f| {
++            let _ = tx.send(f.and_then(|file| file.as_path().map(PathBuf::from)));
++        });
++
++    rx.await.ok().flatten().ok_or(FileError::NoFile)
++}
++
++async fn pick_save_path(app: &AppHandle) -> Result<PathBuf, FileError> {
++    let (tx, rx) = tokio::sync::oneshot::channel();
++    app.dialog()
++        .file()
++        .add_filter("ManjaWord", &["manjaword.json"])
++        .set_file_name("untitled.manjaword.json")
++        .save_file(move |f| {
++            let _ = tx.send(f.and_then(|file| file.as_path().map(PathBuf::from)));
++        });
++    rx.await.ok().flatten().ok_or(FileError::NoFile)
++}
++
++pub async fn open_file(app: AppHandle) -> Result<OpenedDocument, FileError> {
++    let path = pick_open_path(&app).await?;
++    validate_path(&path)?;
++    let raw = fs::read_to_string(&path)?;
++    let parsed: EditorDocument = serde_json::from_str(&raw)?;
++    Ok(OpenedDocument {
++        path: path.display().to_string(),
++        content: parsed.content,
++    })
++}
++
++pub async fn save_file(app: AppHandle, content: serde_json::Value) -> Result<String, FileError> {
++    let path = pick_save_path(&app).await?;
++    let mut path = path;
++    if !path.to_string_lossy().ends_with(".manjaword.json") {
++        path = PathBuf::from(format!("{}.manjaword.json", path.display()));
++    }
++    validate_path(&path)?;
++
++    let payload = EditorDocument::new(content);
++    let json = serde_json::to_string_pretty(&payload)?;
++    fs::write(&path, json)?;
++
++    Ok(path.display().to_string())
++}
+diff --git a/src-tauri/src/grammar.rs b/src-tauri/src/grammar.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..c7c85575ed1db621e9010edb906ff5895293ff93
+--- /dev/null
++++ b/src-tauri/src/grammar.rs
+@@ -0,0 +1,63 @@
++use serde::{Deserialize, Serialize};
++use thiserror::Error;
++
++#[derive(Debug, Serialize, Deserialize)]
++pub struct GrammarMatch {
++    pub message: String,
++    pub offset: usize,
++    pub length: usize,
++    pub replacements: Vec<String>,
++}
++
++#[derive(Debug, Serialize, Deserialize)]
++pub struct GrammarResponse {
++    pub matches: Vec<GrammarMatch>,
++}
++
++#[derive(Debug, Deserialize)]
++struct LTResponse {
++    matches: Vec<LTMatch>,
++}
++
++#[derive(Debug, Deserialize)]
++struct LTMatch {
++    message: String,
++    offset: usize,
++    length: usize,
++    replacements: Vec<LTReplacement>,
++}
++
++#[derive(Debug, Deserialize)]
++struct LTReplacement {
++    value: String,
++}
++
++#[derive(Debug, Error)]
++pub enum GrammarError {
++    #[error("grammar service unavailable")]
++    Unavailable,
++}
++
++pub async fn grammar_check(text: String) -> Result<GrammarResponse, GrammarError> {
++    let client = reqwest::Client::new();
++    let resp = client
++        .post("http://localhost:8081/v2/check")
++        .form(&[("text", text), ("language", "en-US".to_string())])
++        .send()
++        .await
++        .map_err(|_| GrammarError::Unavailable)?;
++
++    let parsed: LTResponse = resp.json().await.map_err(|_| GrammarError::Unavailable)?;
++    let mapped = parsed
++        .matches
++        .into_iter()
++        .map(|m| GrammarMatch {
++            message: m.message,
++            offset: m.offset,
++            length: m.length,
++            replacements: m.replacements.into_iter().map(|r| r.value).collect(),
++        })
++        .collect();
++
++    Ok(GrammarResponse { matches: mapped })
++}
+diff --git a/src-tauri/src/main.rs b/src-tauri/src/main.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..0d6a2f8c0a73bbfa449316859848fb987c7449ce
+--- /dev/null
++++ b/src-tauri/src/main.rs
+@@ -0,0 +1,69 @@
++mod autosave;
++mod exporter;
++mod file_handler;
++mod grammar;
++
++use autosave::EditorDocument;
++use serde_json::Value;
++use tauri::AppHandle;
++
++#[tauri::command]
++async fn open_file(app: AppHandle) -> Result<file_handler::OpenedDocument, String> {
++    file_handler::open_file(app)
++        .await
++        .map_err(|e| e.to_string())
++}
++
++#[tauri::command]
++async fn save_file(app: AppHandle, content: Value) -> Result<String, String> {
++    file_handler::save_file(app, content)
++        .await
++        .map_err(|e| e.to_string())
++}
++
++#[tauri::command]
++async fn export_docx(app: AppHandle, content: Value) -> Result<String, String> {
++    exporter::export_docx(app, content)
++        .await
++        .map_err(|e| e.to_string())
++}
++
++#[tauri::command]
++async fn export_pdf(app: AppHandle, content: Value) -> Result<String, String> {
++    exporter::export_pdf(app, content)
++        .await
++        .map_err(|e| e.to_string())
++}
++
++#[tauri::command]
++async fn grammar_check(text: String) -> Result<grammar::GrammarResponse, String> {
++    grammar::grammar_check(text)
++        .await
++        .map_err(|e| e.to_string())
++}
++
++#[tauri::command]
++fn autosave_document(app: AppHandle, content: Value) -> Result<(), String> {
++    autosave::autosave_document(app, content).map_err(|e| e.to_string())
++}
++
++#[tauri::command]
++fn recover_unsaved_document(app: AppHandle) -> Result<Option<EditorDocument>, String> {
++    autosave::recover_unsaved_document(app).map_err(|e| e.to_string())
++}
++
++fn main() {
++    tauri::Builder::default()
++        .plugin(tauri_plugin_dialog::init())
++        .invoke_handler(tauri::generate_handler![
++            open_file,
++            save_file,
++            export_docx,
++            export_pdf,
++            grammar_check,
++            autosave_document,
++            recover_unsaved_document
++        ])
++        .run(tauri::generate_context!())
++        .expect("error while running ManjaWord-Rust");
++}
+diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a6ed0c7137b25d931b715a542b0ae52fe071a3c
+--- /dev/null
++++ b/src-tauri/tauri.conf.json
+@@ -0,0 +1,33 @@
++{
++  "$schema": "https://schema.tauri.app/config/2",
++  "productName": "ManjaWord-Rust",
++  "version": "1.0.0",
++  "identifier": "com.manjaword.rust",
++  "build": {
++    "frontendDist": "../dist",
++    "devUrl": "http://localhost:1420",
++    "beforeDevCommand": "npm run dev",
++    "beforeBuildCommand": "npm run build"
++  },
++  "app": {
++    "windows": [
++      {
++        "title": "ManjaWord-Rust",
++        "width": 1240,
++        "height": 860,
++        "resizable": true
++      }
++    ],
++    "security": {
++      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'self' http://localhost:8081"
++    }
++  },
++  "bundle": {
++    "active": true,
++    "targets": [
++      "appimage",
++      "msi",
++      "dmg"
++    ]
++  }
++}
+\ No newline at end of file
+diff --git a/src/App.jsx b/src/App.jsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d81f01c28580a43f8239dc559999140e0c4dac1
+--- /dev/null
++++ b/src/App.jsx
+@@ -0,0 +1,121 @@
++import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
++import { invoke } from '@tauri-apps/api/core';
++import Editor from './components/Editor';
++
++const initialDelta = { ops: [{ insert: '\n' }] };
++
++export default function App() {
++  const quillRef = useRef(null);
++  const [delta, setDelta] = useState(initialDelta);
++  const [wordCount, setWordCount] = useState(0);
++  const [grammarEnabled, setGrammarEnabled] = useState(false);
++  const [grammarResult, setGrammarResult] = useState([]);
++  const [theme, setTheme] = useState('light');
++  const [isDirty, setIsDirty] = useState(false);
++
++  const title = useMemo(() => `ManjaWord-Rust${isDirty ? ' • Unsaved' : ''}`, [isDirty]);
++
++  useEffect(() => {
++    document.title = title;
++  }, [title]);
++
++  useEffect(() => {
++    const timer = setInterval(() => {
++      if (!isDirty) return;
++      invoke('autosave_document', { content: delta }).catch(console.error);
++    }, 30_000);
++
++    return () => clearInterval(timer);
++  }, [delta, isDirty]);
++
++  useEffect(() => {
++    invoke('recover_unsaved_document')
++      .then((payload) => {
++        if (!payload) return;
++        setDelta(payload.content || initialDelta);
++        setIsDirty(true);
++      })
++      .catch(() => {});
++  }, []);
++
++  useEffect(() => {
++    if (!quillRef.current) return;
++    quillRef.current.setContents(delta);
++  }, [delta]);
++
++  const handleChange = useCallback((nextDelta, plainText) => {
++    setDelta(nextDelta);
++    const words = plainText.trim() ? plainText.trim().split(/\s+/).length : 0;
++    setWordCount(words);
++    setIsDirty(true);
++  }, []);
++
++  const handleNew = useCallback(() => {
++    setDelta(initialDelta);
++    setWordCount(0);
++    setGrammarResult([]);
++    setIsDirty(false);
++  }, []);
++
++  const handleOpen = useCallback(async () => {
++    const opened = await invoke('open_file');
++    if (!opened) return;
++    setDelta(opened.content || initialDelta);
++    setIsDirty(false);
++  }, []);
++
++  const handleSave = useCallback(async () => {
++    await invoke('save_file', { content: delta });
++    setIsDirty(false);
++  }, [delta]);
++
++  const handleExportDocx = useCallback(async () => {
++    await invoke('export_docx', { content: delta });
++  }, [delta]);
++
++  const handleExportPdf = useCallback(async () => {
++    await invoke('export_pdf', { content: delta });
++  }, [delta]);
++
++  const handleGrammar = useCallback(async () => {
++    const next = !grammarEnabled;
++    setGrammarEnabled(next);
++    if (!next || !quillRef.current) {
++      setGrammarResult([]);
++      return;
++    }
++    const text = quillRef.current.getText();
++    const response = await invoke('grammar_check', { text });
++    setGrammarResult(response?.matches || []);
++  }, [grammarEnabled]);
++
++  return (
++    <div className={`app ${theme}`}>
++      <nav className="top-nav"><span>File</span><span>Edit</span><span>View</span><span>Help</span></nav>
++      <header className="menu-bar">
++        <div className="menu-group">
++          <button onClick={handleNew}>New</button>
++          <button onClick={handleOpen}>Open</button>
++          <button onClick={handleSave}>Save</button>
++          <button onClick={handleExportDocx}>Export DOCX</button>
++          <button onClick={handleExportPdf}>Export PDF</button>
++        </div>
++        <div className="menu-group">
++          <button onClick={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}>
++            {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
++          </button>
++          <button onClick={handleGrammar}>{`Grammar: ${grammarEnabled ? 'ON' : 'OFF'}`}</button>
++        </div>
++      </header>
++
++      <main className="editor-area">
++        <Editor onReady={(q) => (quillRef.current = q)} onChange={handleChange} theme={theme} />
++      </main>
++
++      <footer className="status-bar">
++        <span>Words: {wordCount}</span>
++        <span>Grammar Matches: {grammarResult.length}</span>
++      </footer>
++    </div>
++  );
++}
+diff --git a/src/components/Editor.jsx b/src/components/Editor.jsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..733f04f9c1efcdcb9862d018e1c9485f627b38a1
+--- /dev/null
++++ b/src/components/Editor.jsx
+@@ -0,0 +1,72 @@
++import { useEffect, useMemo, useRef } from 'react';
++import Quill from 'quill';
++
++const TOOLBAR = [
++  ['bold', 'italic', 'underline'],
++  [{ header: [1, 2, 3, 4, 5, 6, false] }],
++  [{ font: [] }, { size: ['small', false, 'large', 'huge'] }],
++  [{ align: [] }],
++  [{ list: 'ordered' }, { list: 'bullet' }],
++  ['undo', 'redo']
++];
++
++
++export default function Editor({ onReady, onChange, theme }) {
++  const containerRef = useRef(null);
++  const quillRef = useRef(null);
++
++  const modules = useMemo(
++    () => ({
++      toolbar: TOOLBAR,
++      history: {
++        delay: 750,
++        maxStack: 100,
++        userOnly: true
++      },
++      keyboard: {
++        bindings: {
++          undo: {
++            key: 'z',
++            shortKey: true,
++            handler() {
++              this.quill.history.undo();
++            }
++          },
++          redo: {
++            key: 'z',
++            shortKey: true,
++            shiftKey: true,
++            handler() {
++              this.quill.history.redo();
++            }
++          }
++        }
++      }
++    }),
++    []
++  );
++
++  useEffect(() => {
++    if (!containerRef.current || quillRef.current) return;
++
++    const quill = new Quill(containerRef.current, {
++      theme: 'snow',
++      modules,
++      placeholder: 'Start writing your document...'
++    });
++
++    quill.on('text-change', () => {
++      onChange(quill.getContents(), quill.getText());
++    });
++
++    quillRef.current = quill;
++    onReady(quill);
++  }, [modules, onReady, onChange]);
++
++  useEffect(() => {
++    if (!quillRef.current) return;
++    document.body.dataset.theme = theme;
++  }, [theme]);
++
++  return <div ref={containerRef} className="editor-shell" />;
++}
+diff --git a/src/main.jsx b/src/main.jsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..94ce6f28dff40f8d9548634460bebe11dee97198
+--- /dev/null
++++ b/src/main.jsx
+@@ -0,0 +1,11 @@
++import React from 'react';
++import ReactDOM from 'react-dom/client';
++import App from './App';
++import './styles/app.css';
++import 'quill/dist/quill.snow.css';
++
++ReactDOM.createRoot(document.getElementById('root')).render(
++  <React.StrictMode>
++    <App />
++  </React.StrictMode>
++);
+diff --git a/src/styles/app.css b/src/styles/app.css
+new file mode 100644
+index 0000000000000000000000000000000000000000..1e02cf4c03e43b2241145aae699133a1e3b5fd58
+--- /dev/null
++++ b/src/styles/app.css
+@@ -0,0 +1,75 @@
++:root {
++  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
++  line-height: 1.4;
++}
++
++body {
++  margin: 0;
++}
++
++.app {
++  min-height: 100vh;
++  display: grid;
++  grid-template-rows: auto auto 1fr auto;
++}
++
++.top-nav,
++.menu-bar,
++.status-bar {
++  display: flex;
++  justify-content: space-between;
++  align-items: center;
++  padding: 0.45rem 0.75rem;
++  border-bottom: 1px solid #d6d6d6;
++}
++
++.top-nav {
++  font-weight: 600;
++}
++
++.menu-bar {
++  gap: 0.75rem;
++}
++
++.menu-group {
++  display: flex;
++  gap: 0.4rem;
++  flex-wrap: wrap;
++}
++
++button {
++  border: 1px solid #bbb;
++  background: transparent;
++  border-radius: 6px;
++  padding: 0.35rem 0.6rem;
++  cursor: pointer;
++}
++
++.editor-area {
++  padding: 0.8rem;
++}
++
++.editor-shell {
++  height: calc(100vh - 180px);
++}
++
++.status-bar {
++  border-top: 1px solid #d6d6d6;
++  border-bottom: 0;
++}
++
++.app.dark {
++  background: #171717;
++  color: #efefef;
++}
++
++.app.dark .top-nav,
++.app.dark .menu-bar,
++.app.dark .status-bar {
++  border-color: #333;
++}
++
++.app.dark button {
++  color: #efefef;
++  border-color: #555;
++}
+diff --git a/vite.config.js b/vite.config.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..5df442e287682100e2fbeeb86d7cc1294d55583e
+--- /dev/null
++++ b/vite.config.js
+@@ -0,0 +1,20 @@
++import { defineConfig } from 'vite';
++import react from '@vitejs/plugin-react';
++
++export default defineConfig(() => ({
++  plugins: [react()],
++  clearScreen: false,
++  server: {
++    port: 1420,
++    strictPort: true,
++    hmr: {
++      port: 1421
++    }
++  },
++  envPrefix: ['VITE_', 'TAURI_'],
++  build: {
++    target: process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari13',
++    minify: !process.env.TAURI_DEBUG ? 'esbuild' : false,
++    sourcemap: !!process.env.TAURI_DEBUG
++  }
++}));
+
+

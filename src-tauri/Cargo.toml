@@ -1,0 +1,30 @@
+[package]
+name = "manjaword-rust"
+version = "1.0.0"
+description = "Lightweight secure word editor built with Tauri"
+authors = ["ManjaWord Team"]
+license = "MIT"
+repository = "https://github.com/example/manjaword-rust"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2.0.2", features = [] }
+
+[dependencies]
+tauri = { version = "2.2.5", features = [] }
+tauri-plugin-dialog = "2.2.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+chrono = { version = "0.4", features = ["serde"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+docx-rs = "0.4"
+printpdf = "0.7"
+regex = "1"
+
+tokio = { version = "1", features = ["sync"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
