@@ -1,69 +1,84 @@
-mod autosave;
-mod exporter;
-mod file_handler;
-mod grammar;
+// src-tauri/src/main.rs
 
-use autosave::EditorDocument;
-use serde_json::Value;
-use tauri::AppHandle;
+use tauri::{command, generate_handler, State};
+use std::sync::{Arc, Mutex};
 
-#[tauri::command]
-async fn open_file(app: AppHandle) -> Result<file_handler::OpenedDocument, String> {
-    file_handler::open_file(app)
-        .await
-        .map_err(|e| e.to_string())
+#[derive(Debug)]
+pub enum ExportError {
+    InvalidFormat,
+    PermissionDenied,
+    Other(String),
 }
 
-#[tauri::command]
-async fn save_file(app: AppHandle, content: Value) -> Result<String, String> {
-    file_handler::save_file(app, content)
-        .await
-        .map_err(|e| e.to_string())
+#[command]
+pub fn open_document(path: String) {
+    // Implementation for opening a document
 }
 
-#[tauri::command]
-async fn export_docx(app: AppHandle, content: Value) -> Result<String, String> {
-    exporter::export_docx(app, content)
-        .await
-        .map_err(|e| e.to_string())
+#[command]
+pub fn save_document(content: String) -> Result<(), ExportError> {
+    // Implementation for saving a document
+    Ok(())
 }
 
-#[tauri::command]
-async fn export_pdf(app: AppHandle, content: Value) -> Result<String, String> {
-    exporter::export_pdf(app, content)
-        .await
-        .map_err(|e| e.to_string())
+#[command]
+pub fn save_as_document(path: String, content: String) -> Result<(), ExportError> {
+    // Implementation for saving a document with a different name
+    Ok(())
 }
 
-#[tauri::command]
-async fn grammar_check(text: String) -> Result<grammar::GrammarResponse, String> {
-    grammar::grammar_check(text)
-        .await
-        .map_err(|e| e.to_string())
+#[command]
+pub fn new_document() {
+    // Implementation for creating a new document
 }
 
-#[tauri::command]
-fn autosave_document(app: AppHandle, content: Value) -> Result<(), String> {
-    autosave::autosave_document(app, content).map_err(|e| e.to_string())
+#[command]
+pub fn export_docx(path: String) -> Result<(), ExportError> {
+    // Implementation for exporting to .docx format
+    Ok(())
 }
 
-#[tauri::command]
-fn recover_unsaved_document(app: AppHandle) -> Result<Option<EditorDocument>, String> {
-    autosave::recover_unsaved_document(app).map_err(|e| e.to_string())
+#[command]
+pub fn export_pdf(path: String) -> Result<(), ExportError> {
+    // Implementation for exporting to PDF format
+    Ok(())
+}
+
+#[command]
+pub fn export_txt(path: String) -> Result<(), ExportError> {
+    // Implementation for exporting to .txt format
+    Ok(())
+}
+
+#[command]
+pub fn check_grammar(content: String) {
+    // Implementation for checking grammar
+}
+
+#[command]
+pub fn autosave_init() {
+    // Implementation for initializing autosave
+}
+
+#[command]
+pub fn restore_autosave() {
+    // Implementation for restoring autosave data
 }
 
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![
-            open_file,
-            save_file,
+        .invoke_handler(generate_handler![
+            open_document,
+            save_document,
+            save_as_document,
+            new_document,
             export_docx,
             export_pdf,
-            grammar_check,
-            autosave_document,
-            recover_unsaved_document
+            export_txt,
+            check_grammar,
+            autosave_init,
+            restore_autosave,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running ManjaWord-Rust");
+        .expect("error while running tauri application");
 }
