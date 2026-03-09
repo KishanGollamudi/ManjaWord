@@ -1,0 +1,30 @@
+# Maintainer: Your Name <you@example.com>
+pkgname=manjaword
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Lightweight Microsoft Word-like desktop editor for Manjaro/Arch"
+arch=('x86_64')
+url="https://github.com/example/manjaword"
+license=('MIT')
+depends=('gtk3' 'webkit2gtk' 'hicolor-icon-theme')
+makedepends=('rust' 'cargo' 'npm' 'nodejs')
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$srcdir/$pkgname-$pkgver"
+  npm install
+  npm run tauri build
+}
+
+package() {
+  cd "$srcdir/$pkgname-$pkgver"
+
+  install -dm755 "$pkgdir/usr/bin"
+  install -dm755 "$pkgdir/usr/share/applications"
+  install -dm755 "$pkgdir/usr/share/icons/hicolor/256x256/apps"
+
+  install -m755 "src-tauri/target/release/manjaword" "$pkgdir/usr/bin/manjaword"
+  install -m644 "build/manjaword.desktop" "$pkgdir/usr/share/applications/manjaword.desktop"
+  install -m644 "src-tauri/icons/icon-256.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/manjaword.png"
+}

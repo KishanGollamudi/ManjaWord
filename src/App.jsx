@@ -1,49 +1,276 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import Toolbar from './components/Toolbar';
+import TopMenu from './components/TopMenu';
+import Editor from './components/Editor';
+import StatusBar from './components/StatusBar';
+import './styles/App.css';
 
-// Example function for grammar checking (to be implemented)
-const checkGrammar = (text) => {
-    // Placeholder for grammar-checking logic.
-    console.log('Checking grammar for:', text);
-};
+const EMPTY_DELTA = { ops: [{ insert: '\n' }] };
 
-const App = () => {
-    const [document, setDocument] = useState('');
-    const [isDarkMode, setIsDarkMode] = useState(false);
+function App() {
+  const [docPath, setDocPath] = useState(null);
+  const [docDelta, setDocDelta] = useState(EMPTY_DELTA);
+  const [plainText, setPlainText] = useState('');
+  const [wordCount, setWordCount] = useState(0);
+  const [grammarMatches, setGrammarMatches] = useState(0);
+  const [grammarEnabled, setGrammarEnabled] = useState(true);
+  const [saveState, setSaveState] = useState('Unsaved');
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('manjaword-theme') === 'dark');
+  const [errorMessage, setErrorMessage] = useState('');
 
-    // Autosave functionality
-    useEffect(() => {
-        const autosave = setInterval(() => {
-            console.log('Autosaving document:', document);
-            // Implement actual save functionality here
-        }, 5000); // Save every 5 seconds
+  const dirtyRef = useRef(false);
 
-        return () => clearInterval(autosave);
-    }, [document]);
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+    localStorage.setItem('manjaword-theme', darkMode ? 'dark' : 'light');
+  }, [darkMode]);
 
-    const toggleDarkMode = () => {
-        setIsDarkMode(prevMode => !prevMode);
+  const setError = useCallback((message) => {
+    setErrorMessage(message);
+    window.setTimeout(() => setErrorMessage(''), 5000);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    invoke('restore_autosave')
+      .then((payload) => {
+        if (!active || !payload) {
+          return;
+        }
+        const shouldRestore = window.confirm(
+          `Recovered an autosave from ${payload.timestamp}. Restore it?`
+        );
+        if (shouldRestore) {
+          setDocDelta(payload.delta || EMPTY_DELTA);
+          setPlainText(payload.plainText || '');
+          setWordCount(payload.wordCount || 0);
+          setSaveState('Recovered autosave');
+          dirtyRef.current = true;
+        }
+      })
+      .catch(() => {
+        // Autosave restore is best effort.
+      });
+
+    return () => {
+      active = false;
     };
+  }, []);
 
-    const handleDocumentChange = (event) => {
-        const newText = event.target.value;
-        setDocument(newText);
-        checkGrammar(newText);
-    };
+  useEffect(() => {
+    if (!grammarEnabled) {
+      setGrammarMatches(0);
+      return;
+    }
 
-    return (
-        <div style={{ background: isDarkMode ? '#333' : '#FFF', color: isDarkMode ? '#FFF' : '#000' }}>
-            <button onClick={toggleDarkMode}>
-                Toggle Dark Mode
-            </button>
-            <textarea
-                value={document}
-                onChange={handleDocumentChange}
-                placeholder="Start typing your document here..."
-                rows={10}
-                cols={50}
-            />
-        </div>
-    );
-};
+    const timeout = window.setTimeout(async () => {
+      try {
+        const result = await invoke('check_grammar', { text: plainText });
+        if (result.available) {
+          setGrammarMatches(result.matches);
+        } else {
+          setGrammarMatches(0);
+        }
+      } catch {
+        setGrammarMatches(0);
+      }
+    }, 700);
+
+    return () => window.clearTimeout(timeout);
+  }, [plainText, grammarEnabled]);
+
+  useEffect(() => {
+    const timer = window.setInterval(async () => {
+      if (!dirtyRef.current) {
+        return;
+      }
+      try {
+        const autosaveMeta = await invoke('autosave_document', {
+          delta: docDelta,
+          plainText,
+          wordCount
+        });
+        setSaveState(`Autosaved ${autosaveMeta.timestamp}`);
+      } catch {
+        // Autosave failures should not block editing.
+      }
+    }, 30000);
+
+    return () => window.clearInterval(timer);
+  }, [docDelta, plainText, wordCount]);
+
+  const updateContent = useCallback(({ delta, text, words }) => {
+    setDocDelta(delta);
+    setPlainText(text);
+    setWordCount(words);
+    setSaveState('Unsaved');
+    dirtyRef.current = true;
+  }, []);
+
+  const newDocument = useCallback(async () => {
+    try {
+      const payload = await invoke('new_document');
+      setDocPath(null);
+      setDocDelta(payload.delta);
+      setPlainText(payload.plainText);
+      setWordCount(0);
+      setSaveState('New document');
+      dirtyRef.current = false;
+    } catch (error) {
+      setError(String(error));
+    }
+  }, [setError]);
+
+  const openDocument = useCallback(async () => {
+    try {
+      const payload = await invoke('open_document');
+      setDocPath(payload.path);
+      setDocDelta(payload.delta || EMPTY_DELTA);
+      setPlainText(payload.plainText || '');
+      setWordCount(payload.wordCount || 0);
+      setSaveState('Opened');
+      dirtyRef.current = false;
+    } catch (error) {
+      if (!String(error).includes('cancelled')) {
+        setError(String(error));
+      }
+    }
+  }, [setError]);
+
+  const saveDocument = useCallback(async () => {
+    try {
+      if (!docPath) {
+        const response = await invoke('save_as_document', {
+          delta: docDelta,
+          plainText,
+          wordCount
+        });
+        setDocPath(response.path);
+      } else {
+        await invoke('save_document', {
+          path: docPath,
+          delta: docDelta,
+          plainText,
+          wordCount
+        });
+      }
+      setSaveState('Saved');
+      dirtyRef.current = false;
+    } catch (error) {
+      if (!String(error).includes('cancelled')) {
+        setError(String(error));
+      }
+    }
+  }, [docPath, docDelta, plainText, wordCount, setError]);
+
+  const saveAsDocument = useCallback(async () => {
+    try {
+      const response = await invoke('save_as_document', {
+        delta: docDelta,
+        plainText,
+        wordCount
+      });
+      setDocPath(response.path);
+      setSaveState('Saved');
+      dirtyRef.current = false;
+    } catch (error) {
+      if (!String(error).includes('cancelled')) {
+        setError(String(error));
+      }
+    }
+  }, [docDelta, plainText, wordCount, setError]);
+
+  const exportDocx = useCallback(async () => {
+    try {
+      await invoke('export_docx', { plainText });
+    } catch (error) {
+      if (!String(error).includes('cancelled')) {
+        setError(String(error));
+      }
+    }
+  }, [plainText, setError]);
+
+  const exportPdf = useCallback(async () => {
+    try {
+      await invoke('export_pdf', { plainText });
+    } catch (error) {
+      if (!String(error).includes('cancelled')) {
+        setError(String(error));
+      }
+    }
+  }, [plainText, setError]);
+
+  const exportTxt = useCallback(async () => {
+    try {
+      await invoke('export_txt', { plainText });
+    } catch (error) {
+      if (!String(error).includes('cancelled')) {
+        setError(String(error));
+      }
+    }
+  }, [plainText, setError]);
+
+  const toggleGrammar = useCallback(() => {
+    setGrammarEnabled((value) => !value);
+  }, []);
+
+  const toggleDarkMode = useCallback(() => {
+    setDarkMode((value) => !value);
+  }, []);
+
+  const menuActions = useMemo(
+    () => ({
+      newDocument,
+      openDocument,
+      saveDocument,
+      saveAsDocument,
+      toggleDarkMode,
+      exportDocx,
+      exportPdf,
+      exportTxt,
+      undo: () => window.dispatchEvent(new CustomEvent('manjaword:undo')),
+      redo: () => window.dispatchEvent(new CustomEvent('manjaword:redo'))
+    }),
+    [
+      newDocument,
+      openDocument,
+      saveDocument,
+      saveAsDocument,
+      toggleDarkMode,
+      exportDocx,
+      exportPdf,
+      exportTxt
+    ]
+  );
+
+  return (
+    <div className="app-shell">
+      <TopMenu actions={menuActions} />
+      <Toolbar
+        onNew={newDocument}
+        onOpen={openDocument}
+        onSave={saveDocument}
+        onSaveAs={saveAsDocument}
+        onExportDocx={exportDocx}
+        onExportPdf={exportPdf}
+        onExportTxt={exportTxt}
+        onToggleGrammar={toggleGrammar}
+        onToggleDarkMode={toggleDarkMode}
+        grammarEnabled={grammarEnabled}
+        darkMode={darkMode}
+      />
+      <Editor initialDelta={docDelta} onContentChange={updateContent} />
+      <StatusBar
+        filePath={docPath}
+        saveState={saveState}
+        wordCount={wordCount}
+        grammarMatches={grammarMatches}
+        errorMessage={errorMessage}
+      />
+    </div>
+  );
+}
 
 export default App;

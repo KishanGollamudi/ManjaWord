@@ -1,0 +1,47 @@
+.toolbar-shell {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.toolbar-actions button {
+  border: 1px solid var(--border);
+  background: var(--panel-alt);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.toolbar-actions button:hover {
+  border-color: var(--accent);
+}
+
+.toolbar-formatting {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  background: var(--panel-alt);
+}
+
+.toolbar-formatting .ql-formats {
+  margin-right: 2px;
+}
+
+.toolbar-formatting .ql-picker-label,
+.toolbar-formatting .ql-stroke,
+.toolbar-formatting .ql-fill {
+  color: var(--text);
+  stroke: var(--text);
+}

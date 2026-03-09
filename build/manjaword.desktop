@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=ManjaWord
+Comment=Lightweight Microsoft Word-like editor for Linux
+Exec=/usr/bin/manjaword
+Icon=manjaword
+Terminal=false
+Categories=Office;WordProcessor;
+StartupNotify=true

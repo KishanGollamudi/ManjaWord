@@ -1,92 +1,90 @@
 use docx_rs::{Docx, Paragraph, Run};
 use printpdf::{BuiltinFont, Mm, PdfDocument};
-use serde_json::Value;
-use std::{fs::File, io::BufWriter, path::PathBuf};
+use std::fs::File;
+use std::io::BufWriter;
+use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
-use thiserror::Error;
 
-#[derive(Debug, Error)]
-pub enum ExportError {
-    #[error("no file selected")]
-    NoFile,
-    #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("docx error: {0}")]
-    Docx(#[from] docx_rs::DocxError),
-}
+use crate::file_handler::validate_allowed_path;
 
-fn delta_to_lines(content: &Value) -> Vec<String> {
-    content
-        .get("ops")
-        .and_then(Value::as_array)
-        .map(|ops| {
-            ops.iter()
-                .filter_map(|op| op.get("insert").and_then(Value::as_str))
-                .flat_map(|txt| txt.split('\n').map(str::to_string).collect::<Vec<String>>())
-                .collect::<Vec<String>>()
-        })
-        .unwrap_or_default()
-}
-
-async fn pick_export_path(
-    app: &AppHandle,
-    ext: &str,
-    default_name: &str,
-) -> Result<PathBuf, ExportError> {
+async fn pick_export_path(app: &AppHandle, extension: &str, default_name: &str) -> Result<PathBuf, String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog()
         .file()
-        .add_filter(ext.to_uppercase(), &[ext])
+        .add_filter(extension.to_uppercase(), &[extension])
         .set_file_name(default_name)
-        .save_file(move |f| {
-            let _ = tx.send(f.and_then(|v| v.as_path().map(PathBuf::from)));
+        .save_file(move |picked| {
+            let _ = tx.send(picked.and_then(|path| path.as_path().map(PathBuf::from)));
         });
 
-    rx.await.ok().flatten().ok_or(ExportError::NoFile)
+    rx.await
+        .map_err(|_| "dialog channel closed".to_string())?
+        .ok_or_else(|| "cancelled".to_string())
 }
 
-pub async fn export_docx(app: AppHandle, content: Value) -> Result<String, ExportError> {
-    let mut path = pick_export_path(&app, "docx", "document.docx").await?;
-    if path.extension().and_then(|e| e.to_str()) != Some("docx") {
-        path.set_extension("docx");
+fn normalize_path(mut path: PathBuf, extension: &str) -> PathBuf {
+    if path.extension().and_then(|ext| ext.to_str()) != Some(extension) {
+        path.set_extension(extension);
     }
+    path
+}
 
-    let lines = delta_to_lines(&content);
+fn lines_from_text(text: &str) -> Vec<String> {
+    text.lines().map(|line| line.to_string()).collect()
+}
+
+pub async fn export_docx(app: AppHandle, plain_text: String) -> Result<String, String> {
+    let path = normalize_path(pick_export_path(&app, "docx", "document.docx").await?, "docx");
+    validate_allowed_path(Path::new(&path))?;
+
     let mut doc = Docx::new();
-    for line in lines {
-        if !line.trim().is_empty() {
-            doc = doc.add_paragraph(Paragraph::new().add_run(Run::new().add_text(line)));
-        }
+    for line in lines_from_text(&plain_text) {
+        let paragraph = Paragraph::new().add_run(Run::new().add_text(line));
+        doc = doc.add_paragraph(paragraph);
     }
 
-    doc.build().pack(File::create(&path)?)?;
+    let file = File::create(&path).map_err(|err| format!("unable to create file: {err}"))?;
+    doc.build()
+        .pack(file)
+        .map_err(|err| format!("unable to build DOCX: {err}"))?;
+
     Ok(path.display().to_string())
 }
 
-pub async fn export_pdf(app: AppHandle, content: Value) -> Result<String, ExportError> {
-    let mut path = pick_export_path(&app, "pdf", "document.pdf").await?;
-    if path.extension().and_then(|e| e.to_str()) != Some("pdf") {
-        path.set_extension("pdf");
-    }
+pub async fn export_txt(app: AppHandle, plain_text: String) -> Result<String, String> {
+    let path = normalize_path(pick_export_path(&app, "txt", "document.txt").await?, "txt");
+    validate_allowed_path(Path::new(&path))?;
 
-    let (doc, page1, layer1) =
-        PdfDocument::new("ManjaWord Export", Mm(210.0), Mm(297.0), "Layer 1");
-    let layer = doc.get_page(page1).get_layer(layer1);
-    let font = doc.add_builtin_font(BuiltinFont::Helvetica)?;
+    tokio::fs::write(&path, plain_text)
+        .await
+        .map_err(|err| format!("unable to write TXT: {err}"))?;
 
-    let lines = delta_to_lines(&content);
-    let mut y = 280.0;
-    for line in lines {
-        if y < 15.0 {
+    Ok(path.display().to_string())
+}
+
+pub async fn export_pdf(app: AppHandle, plain_text: String) -> Result<String, String> {
+    let path = normalize_path(pick_export_path(&app, "pdf", "document.pdf").await?, "pdf");
+    validate_allowed_path(Path::new(&path))?;
+
+    let (doc, page, layer) = PdfDocument::new("ManjaWord Document", Mm(210.0), Mm(297.0), "Layer 1");
+    let current_layer = doc.get_page(page).get_layer(layer);
+    let font = doc
+        .add_builtin_font(BuiltinFont::Helvetica)
+        .map_err(|err| format!("unable to load built-in font: {err}"))?;
+
+    let mut y = 282.0;
+    for line in lines_from_text(&plain_text) {
+        if y <= 12.0 {
             break;
         }
-        if !line.trim().is_empty() {
-            layer.use_text(line, 12.0, Mm(15.0), Mm(y), &font);
-            y -= 8.0;
-        }
+        current_layer.use_text(line, 11.0, Mm(16.0), Mm(y), &font);
+        y -= 7.0;
     }
 
-    doc.save(&mut BufWriter::new(File::create(&path)?))?;
+    let file = File::create(&path).map_err(|err| format!("unable to create PDF file: {err}"))?;
+    doc.save(&mut BufWriter::new(file))
+        .map_err(|err| format!("unable to write PDF: {err}"))?;
+
     Ok(path.display().to_string())
 }

@@ -1,72 +1,88 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import Quill from 'quill';
+import 'quill/dist/quill.snow.css';
+import '../styles/Editor.css';
 
-const TOOLBAR = [
-  ['bold', 'italic', 'underline'],
-  [{ header: [1, 2, 3, 4, 5, 6, false] }],
-  [{ font: [] }, { size: ['small', false, 'large', 'huge'] }],
-  [{ align: [] }],
-  [{ list: 'ordered' }, { list: 'bullet' }],
-  ['undo', 'redo']
-];
+const TOOLBAR_SELECTOR = '#quill-toolbar';
 
+function countWords(text) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return 0;
+  }
+  return trimmed.split(/\s+/).length;
+}
 
-export default function Editor({ onReady, onChange, theme }) {
-  const containerRef = useRef(null);
+function Editor({ initialDelta, onContentChange }) {
+  const editorRef = useRef(null);
   const quillRef = useRef(null);
-
-  const modules = useMemo(
-    () => ({
-      toolbar: TOOLBAR,
-      history: {
-        delay: 750,
-        maxStack: 100,
-        userOnly: true
-      },
-      keyboard: {
-        bindings: {
-          undo: {
-            key: 'z',
-            shortKey: true,
-            handler() {
-              this.quill.history.undo();
-            }
-          },
-          redo: {
-            key: 'z',
-            shortKey: true,
-            shiftKey: true,
-            handler() {
-              this.quill.history.redo();
-            }
-          }
-        }
-      }
-    }),
-    []
-  );
+  const applyingExternalDeltaRef = useRef(false);
 
   useEffect(() => {
-    if (!containerRef.current || quillRef.current) return;
+    if (!editorRef.current || quillRef.current) {
+      return;
+    }
 
-    const quill = new Quill(containerRef.current, {
+    const quill = new Quill(editorRef.current, {
       theme: 'snow',
-      modules,
+      modules: {
+        toolbar: TOOLBAR_SELECTOR,
+        history: {
+          delay: 1000,
+          maxStack: 100,
+          userOnly: true
+        }
+      },
       placeholder: 'Start writing your document...'
     });
 
-    quill.on('text-change', () => {
-      onChange(quill.getContents(), quill.getText());
-    });
-
     quillRef.current = quill;
-    onReady(quill);
-  }, [modules, onReady, onChange]);
+
+    const onTextChange = () => {
+      if (applyingExternalDeltaRef.current) {
+        return;
+      }
+      const delta = quill.getContents();
+      const text = quill.getText().replace(/\n$/, '');
+      onContentChange({
+        delta,
+        text,
+        words: countWords(text)
+      });
+    };
+
+    quill.on('text-change', onTextChange);
+
+    const handleUndo = () => quill.history.undo();
+    const handleRedo = () => quill.history.redo();
+
+    window.addEventListener('manjaword:undo', handleUndo);
+    window.addEventListener('manjaword:redo', handleRedo);
+
+    return () => {
+      window.removeEventListener('manjaword:undo', handleUndo);
+      window.removeEventListener('manjaword:redo', handleRedo);
+      quill.off('text-change', onTextChange);
+      quillRef.current = null;
+    };
+  }, [onContentChange]);
 
   useEffect(() => {
-    if (!quillRef.current) return;
-    document.body.dataset.theme = theme;
-  }, [theme]);
+    const quill = quillRef.current;
+    if (!quill || !initialDelta) {
+      return;
+    }
 
-  return <div ref={containerRef} className="editor-shell" />;
+    applyingExternalDeltaRef.current = true;
+    quill.setContents(initialDelta, 'silent');
+    applyingExternalDeltaRef.current = false;
+  }, [initialDelta]);
+
+  return (
+    <div className="editor-wrapper">
+      <div ref={editorRef} className="editor-surface" />
+    </div>
+  );
 }
+
+export default Editor;

@@ -1,63 +1,69 @@
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct GrammarMatch {
-    pub message: String,
-    pub offset: usize,
-    pub length: usize,
-    pub replacements: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GrammarResponse {
-    pub matches: Vec<GrammarMatch>,
+    pub available: bool,
+    pub matches: usize,
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-struct LTResponse {
-    matches: Vec<LTMatch>,
+struct LanguageToolResponse {
+    matches: Vec<LanguageToolMatch>,
 }
 
 #[derive(Debug, Deserialize)]
-struct LTMatch {
-    message: String,
-    offset: usize,
-    length: usize,
-    replacements: Vec<LTReplacement>,
+struct LanguageToolMatch {
+    _message: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct LTReplacement {
-    value: String,
-}
+pub async fn check_grammar(text: String) -> Result<GrammarResponse, String> {
+    if text.trim().is_empty() {
+        return Ok(GrammarResponse {
+            available: true,
+            matches: 0,
+            message: None,
+        });
+    }
 
-#[derive(Debug, Error)]
-pub enum GrammarError {
-    #[error("grammar service unavailable")]
-    Unavailable,
-}
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .map_err(|err| format!("unable to initialize grammar client: {err}"))?;
 
-pub async fn grammar_check(text: String) -> Result<GrammarResponse, GrammarError> {
-    let client = reqwest::Client::new();
-    let resp = client
+    let response = client
         .post("http://localhost:8081/v2/check")
-        .form(&[("text", text), ("language", "en-US".to_string())])
+        .form(&[("language", "en-US"), ("text", text.as_str())])
         .send()
-        .await
-        .map_err(|_| GrammarError::Unavailable)?;
+        .await;
 
-    let parsed: LTResponse = resp.json().await.map_err(|_| GrammarError::Unavailable)?;
-    let mapped = parsed
-        .matches
-        .into_iter()
-        .map(|m| GrammarMatch {
-            message: m.message,
-            offset: m.offset,
-            length: m.length,
-            replacements: m.replacements.into_iter().map(|r| r.value).collect(),
-        })
-        .collect();
+    match response {
+        Ok(resp) => {
+            if !resp.status().is_success() {
+                return Ok(GrammarResponse {
+                    available: false,
+                    matches: 0,
+                    message: Some(format!("grammar server status: {}", resp.status())),
+                });
+            }
 
-    Ok(GrammarResponse { matches: mapped })
+            let payload: LanguageToolResponse = resp
+                .json()
+                .await
+                .map_err(|err| format!("invalid grammar response: {err}"))?;
+
+            Ok(GrammarResponse {
+                available: true,
+                matches: payload.matches.len(),
+                message: None,
+            })
+        }
+        Err(_) => Ok(GrammarResponse {
+            available: false,
+            matches: 0,
+            message: Some("LanguageTool server unavailable".to_string()),
+        }),
+    }
 }

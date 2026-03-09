@@ -1,0 +1,27 @@
+.status-bar {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 13px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text-muted);
+}
+
+.status-error {
+  color: var(--danger);
+  text-align: right;
+}
+
+@media (max-width: 960px) {
+  .status-bar {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .status-error {
+    text-align: left;
+  }
+}
