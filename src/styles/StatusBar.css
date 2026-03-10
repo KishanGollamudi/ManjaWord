@@ -1,13 +1,19 @@
 .status-bar {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: minmax(180px, 2fr) repeat(4, minmax(0, 1fr));
   gap: 12px;
   align-items: center;
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: 12px;
   border-top: 1px solid var(--border);
   background: var(--panel);
   color: var(--text-muted);
+}
+
+.status-bar span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status-error {

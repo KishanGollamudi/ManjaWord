@@ -1,224 +1,244 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import Toolbar from './components/Toolbar';
-import TopMenu from './components/TopMenu';
-import Editor from './components/Editor';
-import StatusBar from './components/StatusBar';
-import './styles/App.css';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import Editor from "./components/Editor";
+import Toolbar from "./components/Toolbar";
+import TopMenu from "./components/TopMenu";
+import StatusBar from "./components/StatusBar";
+import "./styles/App.css";
+import "./styles/index.css";
 
-const EMPTY_DELTA = { ops: [{ insert: '\n' }] };
+function isDialogCancelled(error) {
+  const message = String(error || "").toLowerCase();
+  return message.includes("cancelled");
+}
 
 function App() {
-  const [docPath, setDocPath] = useState(null);
-  const [docDelta, setDocDelta] = useState(EMPTY_DELTA);
-  const [plainText, setPlainText] = useState('');
+  const editorRef = useRef(null);
+  const latestSnapshotRef = useRef({
+    delta: { ops: [{ insert: "\n" }] },
+    plainText: "",
+    wordCount: 0
+  });
+
+  const [filePath, setFilePath] = useState("");
   const [wordCount, setWordCount] = useState(0);
-  const [grammarMatches, setGrammarMatches] = useState(0);
-  const [grammarEnabled, setGrammarEnabled] = useState(true);
-  const [saveState, setSaveState] = useState('Unsaved');
-  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('manjaword-theme') === 'dark');
-  const [errorMessage, setErrorMessage] = useState('');
+  const [saveState, setSaveState] = useState("Idle");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [darkMode, setDarkMode] = useState(false);
 
-  const dirtyRef = useRef(false);
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
-    localStorage.setItem('manjaword-theme', darkMode ? 'dark' : 'light');
-  }, [darkMode]);
-
-  const setError = useCallback((message) => {
-    setErrorMessage(message);
-    window.setTimeout(() => setErrorMessage(''), 5000);
+  const updateSnapshot = useCallback((snapshot) => {
+    latestSnapshotRef.current = snapshot;
+    setWordCount(snapshot.wordCount);
   }, []);
 
-  useEffect(() => {
-    let active = true;
+  const getSnapshot = useCallback(() => {
+    const liveSnapshot = editorRef.current?.getSnapshot();
+    return liveSnapshot || latestSnapshotRef.current;
+  }, []);
 
-    invoke('restore_autosave')
-      .then((payload) => {
-        if (!active || !payload) {
-          return;
-        }
-        const shouldRestore = window.confirm(
-          `Recovered an autosave from ${payload.timestamp}. Restore it?`
-        );
-        if (shouldRestore) {
-          setDocDelta(payload.delta || EMPTY_DELTA);
-          setPlainText(payload.plainText || '');
-          setWordCount(payload.wordCount || 0);
-          setSaveState('Recovered autosave');
-          dirtyRef.current = true;
-        }
-      })
-      .catch(() => {
-        // Autosave restore is best effort.
+  const pushDocumentToEditor = useCallback(
+    (doc) => {
+      editorRef.current?.setDocument(doc.delta);
+      updateSnapshot({
+        delta: doc.delta,
+        plainText: doc.plainText,
+        wordCount: doc.wordCount
       });
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!grammarEnabled) {
-      setGrammarMatches(0);
-      return;
-    }
-
-    const timeout = window.setTimeout(async () => {
-      try {
-        const result = await invoke('check_grammar', { text: plainText });
-        if (result.available) {
-          setGrammarMatches(result.matches);
-        } else {
-          setGrammarMatches(0);
-        }
-      } catch {
-        setGrammarMatches(0);
-      }
-    }, 700);
-
-    return () => window.clearTimeout(timeout);
-  }, [plainText, grammarEnabled]);
-
-  useEffect(() => {
-    const timer = window.setInterval(async () => {
-      if (!dirtyRef.current) {
-        return;
-      }
-      try {
-        const autosaveMeta = await invoke('autosave_document', {
-          delta: docDelta,
-          plainText,
-          wordCount
-        });
-        setSaveState(`Autosaved ${autosaveMeta.timestamp}`);
-      } catch {
-        // Autosave failures should not block editing.
-      }
-    }, 30000);
-
-    return () => window.clearInterval(timer);
-  }, [docDelta, plainText, wordCount]);
-
-  const updateContent = useCallback(({ delta, text, words }) => {
-    setDocDelta(delta);
-    setPlainText(text);
-    setWordCount(words);
-    setSaveState('Unsaved');
-    dirtyRef.current = true;
-  }, []);
+    },
+    [updateSnapshot]
+  );
 
   const newDocument = useCallback(async () => {
     try {
-      const payload = await invoke('new_document');
-      setDocPath(null);
-      setDocDelta(payload.delta);
-      setPlainText(payload.plainText);
-      setWordCount(0);
-      setSaveState('New document');
-      dirtyRef.current = false;
+      setErrorMessage("");
+      const response = await invoke("new_document");
+      setFilePath("");
+      pushDocumentToEditor({
+        delta: response.delta,
+        plainText: response.plainText,
+        wordCount: 0
+      });
+      setSaveState("New document");
     } catch (error) {
-      setError(String(error));
+      setErrorMessage(String(error));
+      setSaveState("Error");
     }
-  }, [setError]);
+  }, [pushDocumentToEditor]);
 
   const openDocument = useCallback(async () => {
     try {
-      const payload = await invoke('open_document');
-      setDocPath(payload.path);
-      setDocDelta(payload.delta || EMPTY_DELTA);
-      setPlainText(payload.plainText || '');
-      setWordCount(payload.wordCount || 0);
-      setSaveState('Opened');
-      dirtyRef.current = false;
+      setErrorMessage("");
+      const response = await invoke("open_document");
+      setFilePath(response.path);
+      pushDocumentToEditor({
+        delta: response.delta,
+        plainText: response.plainText,
+        wordCount: response.wordCount
+      });
+      setSaveState("Opened");
     } catch (error) {
-      if (!String(error).includes('cancelled')) {
-        setError(String(error));
+      if (!isDialogCancelled(error)) {
+        setErrorMessage(String(error));
+        setSaveState("Error");
       }
     }
-  }, [setError]);
+  }, [pushDocumentToEditor]);
 
   const saveDocument = useCallback(async () => {
+    const snapshot = getSnapshot();
+
     try {
-      if (!docPath) {
-        const response = await invoke('save_as_document', {
-          delta: docDelta,
-          plainText,
-          wordCount
+      setErrorMessage("");
+
+      if (!filePath) {
+        const created = await invoke("save_as_document", {
+          delta: snapshot.delta,
+          plainText: snapshot.plainText,
+          wordCount: snapshot.wordCount
         });
-        setDocPath(response.path);
-      } else {
-        await invoke('save_document', {
-          path: docPath,
-          delta: docDelta,
-          plainText,
-          wordCount
-        });
+        setFilePath(created.path);
+        setSaveState("Saved");
+        return;
       }
-      setSaveState('Saved');
-      dirtyRef.current = false;
+
+      await invoke("save_document", {
+        path: filePath,
+        delta: snapshot.delta,
+        plainText: snapshot.plainText,
+        wordCount: snapshot.wordCount
+      });
+      setSaveState("Saved");
     } catch (error) {
-      if (!String(error).includes('cancelled')) {
-        setError(String(error));
+      if (!isDialogCancelled(error)) {
+        setErrorMessage(String(error));
+        setSaveState("Error");
       }
     }
-  }, [docPath, docDelta, plainText, wordCount, setError]);
+  }, [filePath, getSnapshot]);
 
   const saveAsDocument = useCallback(async () => {
+    const snapshot = getSnapshot();
+
     try {
-      const response = await invoke('save_as_document', {
-        delta: docDelta,
-        plainText,
-        wordCount
+      setErrorMessage("");
+      const response = await invoke("save_as_document", {
+        delta: snapshot.delta,
+        plainText: snapshot.plainText,
+        wordCount: snapshot.wordCount
       });
-      setDocPath(response.path);
-      setSaveState('Saved');
-      dirtyRef.current = false;
+      setFilePath(response.path);
+      setSaveState("Saved");
     } catch (error) {
-      if (!String(error).includes('cancelled')) {
-        setError(String(error));
+      if (!isDialogCancelled(error)) {
+        setErrorMessage(String(error));
+        setSaveState("Error");
       }
     }
-  }, [docDelta, plainText, wordCount, setError]);
+  }, [getSnapshot]);
 
   const exportDocx = useCallback(async () => {
+    const snapshot = getSnapshot();
     try {
-      await invoke('export_docx', { plainText });
+      setErrorMessage("");
+      await invoke("export_docx", { plainText: snapshot.plainText });
+      setSaveState("Exported DOCX");
     } catch (error) {
-      if (!String(error).includes('cancelled')) {
-        setError(String(error));
+      if (!isDialogCancelled(error)) {
+        setErrorMessage(String(error));
       }
     }
-  }, [plainText, setError]);
+  }, [getSnapshot]);
 
   const exportPdf = useCallback(async () => {
+    const snapshot = getSnapshot();
     try {
-      await invoke('export_pdf', { plainText });
+      setErrorMessage("");
+      await invoke("export_pdf", { plainText: snapshot.plainText });
+      setSaveState("Exported PDF");
     } catch (error) {
-      if (!String(error).includes('cancelled')) {
-        setError(String(error));
+      if (!isDialogCancelled(error)) {
+        setErrorMessage(String(error));
       }
     }
-  }, [plainText, setError]);
+  }, [getSnapshot]);
 
   const exportTxt = useCallback(async () => {
+    const snapshot = getSnapshot();
     try {
-      await invoke('export_txt', { plainText });
+      setErrorMessage("");
+      await invoke("export_txt", { plainText: snapshot.plainText });
+      setSaveState("Exported TXT");
     } catch (error) {
-      if (!String(error).includes('cancelled')) {
-        setError(String(error));
+      if (!isDialogCancelled(error)) {
+        setErrorMessage(String(error));
       }
     }
-  }, [plainText, setError]);
+  }, [getSnapshot]);
 
-  const toggleGrammar = useCallback(() => {
-    setGrammarEnabled((value) => !value);
+  const undo = useCallback(() => {
+    editorRef.current?.undo();
+  }, []);
+
+  const redo = useCallback(() => {
+    editorRef.current?.redo();
   }, []);
 
   const toggleDarkMode = useCallback(() => {
-    setDarkMode((value) => !value);
+    setDarkMode((prev) => !prev);
   }, []);
+
+  useEffect(() => {
+    document.body.classList.toggle("dark", darkMode);
+  }, [darkMode]);
+
+  useEffect(() => {
+    let disposed = false;
+
+    const restoreDraft = async () => {
+      try {
+        const restored = await invoke("restore_autosave");
+        if (!restored || disposed) return;
+
+        pushDocumentToEditor({
+          delta: restored.delta,
+          plainText: restored.plainText,
+          wordCount: restored.wordCount
+        });
+
+        setSaveState(`Recovered autosave (${restored.timestamp})`);
+      } catch (error) {
+        if (!disposed) {
+          setErrorMessage(String(error));
+        }
+      }
+    };
+
+    restoreDraft();
+
+    return () => {
+      disposed = true;
+    };
+  }, [pushDocumentToEditor]);
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const snapshot = getSnapshot();
+      if (!snapshot.plainText.trim()) return;
+
+      try {
+        await invoke("autosave_document", {
+          delta: snapshot.delta,
+          plainText: snapshot.plainText,
+          wordCount: snapshot.wordCount
+        });
+        setSaveState((current) => (current === "Error" ? current : "Autosaved"));
+      } catch (error) {
+        setErrorMessage(String(error));
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [getSnapshot]);
 
   const menuActions = useMemo(
     () => ({
@@ -226,28 +246,31 @@ function App() {
       openDocument,
       saveDocument,
       saveAsDocument,
-      toggleDarkMode,
       exportDocx,
       exportPdf,
       exportTxt,
-      undo: () => window.dispatchEvent(new CustomEvent('manjaword:undo')),
-      redo: () => window.dispatchEvent(new CustomEvent('manjaword:redo'))
+      undo,
+      redo,
+      toggleDarkMode
     }),
     [
       newDocument,
       openDocument,
       saveDocument,
       saveAsDocument,
-      toggleDarkMode,
       exportDocx,
       exportPdf,
-      exportTxt
+      exportTxt,
+      undo,
+      redo,
+      toggleDarkMode
     ]
   );
 
   return (
-    <div className="app-shell">
+    <div className="app-root">
       <TopMenu actions={menuActions} />
+
       <Toolbar
         onNew={newDocument}
         onOpen={openDocument}
@@ -255,18 +278,19 @@ function App() {
         onSaveAs={saveAsDocument}
         onExportDocx={exportDocx}
         onExportPdf={exportPdf}
-        onExportTxt={exportTxt}
-        onToggleGrammar={toggleGrammar}
-        onToggleDarkMode={toggleDarkMode}
-        grammarEnabled={grammarEnabled}
-        darkMode={darkMode}
+        onUndo={undo}
+        onRedo={redo}
       />
-      <Editor initialDelta={docDelta} onContentChange={updateContent} />
+
+      <main className="editor-area">
+        <Editor ref={editorRef} onContentChange={updateSnapshot} />
+      </main>
+
       <StatusBar
-        filePath={docPath}
+        filePath={filePath}
         saveState={saveState}
         wordCount={wordCount}
-        grammarMatches={grammarMatches}
+        grammarMatches={0}
         errorMessage={errorMessage}
       />
     </div>

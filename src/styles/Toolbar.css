@@ -1,47 +1,139 @@
 .toolbar-shell {
-  display: grid;
-  gap: 8px;
-  padding: 10px 12px;
-  background: var(--panel);
   border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--panel), #edf2fb);
+  padding: 10px 14px 12px;
 }
 
-.toolbar-actions {
+body.dark .toolbar-shell {
+  background: linear-gradient(180deg, var(--panel), #272f41);
+}
+
+.toolbar-ribbon {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  align-items: stretch;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 2px;
 }
 
-.toolbar-actions button {
+.toolbar-group {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: fit-content;
+  padding: 8px;
   border: 1px solid var(--border);
+  border-radius: 10px;
   background: var(--panel-alt);
-  color: var(--text);
-  padding: 6px 10px;
-  border-radius: 6px;
-  cursor: pointer;
 }
 
-.toolbar-actions button:hover {
-  border-color: var(--accent);
+.toolbar-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+}
+
+.toolbar-group-label {
+  margin-top: 8px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.toolbar-action {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  border-radius: 8px;
+  padding: 6px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.toolbar-action:hover {
+  border-color: var(--border);
+  background: rgba(30, 102, 208, 0.12);
+}
+
+.toolbar-action svg {
+  flex-shrink: 0;
+}
+
+.toolbar-group-format {
+  flex: 1;
+  min-width: 420px;
 }
 
 .toolbar-formatting {
-  display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 4px;
-  background: var(--panel-alt);
 }
 
 .toolbar-formatting .ql-formats {
-  margin-right: 2px;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-right: 1px solid var(--border);
+  padding-right: 8px;
+  margin-right: 8px;
 }
 
+.toolbar-formatting .ql-formats:last-child {
+  border-right: none;
+  padding-right: 0;
+  margin-right: 0;
+}
+
+.toolbar-formatting .ql-picker,
 .toolbar-formatting .ql-picker-label,
-.toolbar-formatting .ql-stroke,
-.toolbar-formatting .ql-fill {
+.toolbar-formatting .ql-picker-item,
+.toolbar-formatting button {
   color: var(--text);
+}
+
+.toolbar-formatting .ql-stroke,
+.toolbar-formatting .ql-picker-options,
+.toolbar-formatting .ql-fill {
   stroke: var(--text);
+}
+
+.toolbar-formatting .ql-picker-options {
+  background: var(--panel-alt);
+  border-color: var(--border);
+}
+
+.toolbar-formatting .ql-picker.ql-expanded .ql-picker-label {
+  border-color: var(--border);
+}
+
+.toolbar-formatting .ql-picker-label:hover,
+.toolbar-formatting button:hover,
+.toolbar-formatting button.ql-active,
+.toolbar-formatting .ql-picker-label.ql-active {
+  color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .toolbar-shell {
+    padding: 8px;
+  }
+
+  .toolbar-group {
+    padding: 6px;
+  }
+
+  .toolbar-action span {
+    display: none;
+  }
+
+  .toolbar-group-format {
+    min-width: 280px;
+  }
 }

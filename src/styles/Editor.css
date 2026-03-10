@@ -1,25 +1,70 @@
 .editor-wrapper {
-  background: var(--panel);
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  overflow: hidden;
+  height: 100%;
+  overflow: auto;
+  padding: 24px;
+}
+
+.editor-page {
+  width: min(210mm, calc(100% - 16px));
+  min-height: 297mm;
+  margin: 0 auto;
+  background: var(--page-bg);
+  box-shadow: var(--page-shadow);
+  border-radius: 4px;
+  border: 1px solid var(--border);
 }
 
 .editor-surface {
-  height: calc(100vh - 225px);
+  min-height: 297mm;
 }
 
-.ql-toolbar.ql-snow,
-.ql-container.ql-snow {
+.editor-surface .ql-container {
   border: none;
-}
-
-.ql-container {
-  color: var(--text);
   font-size: 16px;
+  color: #111827;
 }
 
-.ql-editor {
-  min-height: 100%;
-  color: var(--text);
+.editor-surface .ql-editor {
+  min-height: 297mm;
+  padding: 20mm 18mm;
+  line-height: 1.6;
+  writing-mode: horizontal-tb;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.editor-surface .ql-editor.ql-blank::before {
+  left: 18mm;
+  right: 18mm;
+  color: #8894a8;
+  font-style: normal;
+}
+
+.editor-surface .ql-tooltip {
+  z-index: 20;
+}
+
+@media (max-width: 900px) {
+  .editor-wrapper {
+    padding: 12px;
+  }
+
+  .editor-page {
+    width: calc(100% - 8px);
+    min-height: 80vh;
+  }
+
+  .editor-surface,
+  .editor-surface .ql-editor {
+    min-height: 80vh;
+  }
+
+  .editor-surface .ql-editor {
+    padding: 22px 18px;
+  }
+
+  .editor-surface .ql-editor.ql-blank::before {
+    left: 18px;
+    right: 18px;
+  }
 }

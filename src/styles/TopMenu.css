@@ -14,8 +14,8 @@
   border: 1px solid transparent;
   background: transparent;
   color: var(--text);
-  padding: 5px 9px;
-  border-radius: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
   cursor: pointer;
 }
 
@@ -29,12 +29,13 @@
   position: absolute;
   top: 110%;
   left: 0;
-  min-width: 160px;
-  z-index: 25;
+  min-width: 180px;
+  z-index: 30;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.16);
+  border-radius: 10px;
+  background: var(--panel-alt);
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
 }
 
 .menu-section:hover .menu-dropdown {
@@ -47,10 +48,10 @@
   background: transparent;
   color: var(--text);
   text-align: left;
-  padding: 8px 10px;
+  padding: 9px 11px;
   cursor: pointer;
 }
 
 .menu-dropdown button:hover {
-  background: var(--panel-alt);
+  background: rgba(30, 102, 208, 0.12);
 }

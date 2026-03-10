@@ -1,30 +1,71 @@
-import { useEffect, useRef } from 'react';
-import Quill from 'quill';
-import 'quill/dist/quill.snow.css';
-import '../styles/Editor.css';
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import Quill from "quill";
+import "quill/dist/quill.snow.css";
+import "../styles/Editor.css";
 
-const TOOLBAR_SELECTOR = '#quill-toolbar';
+const TOOLBAR_SELECTOR = "#quill-toolbar";
 
 function countWords(text) {
   const trimmed = text.trim();
-  if (!trimmed) {
-    return 0;
-  }
+  if (!trimmed) return 0;
   return trimmed.split(/\s+/).length;
 }
 
-function Editor({ initialDelta, onContentChange }) {
+const Editor = forwardRef(function Editor({ onContentChange }, ref) {
   const editorRef = useRef(null);
   const quillRef = useRef(null);
-  const applyingExternalDeltaRef = useRef(false);
+  const pendingDeltaRef = useRef(null);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      undo() {
+        quillRef.current?.history.undo();
+      },
+      redo() {
+        quillRef.current?.history.redo();
+      },
+      setDocument(delta) {
+        if (!quillRef.current) {
+          pendingDeltaRef.current = delta;
+          return;
+        }
+
+        const selection = quillRef.current.getSelection();
+        quillRef.current.setContents(delta, "api");
+
+        if (selection) {
+          const maxIndex = Math.max(quillRef.current.getLength() - 1, 0);
+          quillRef.current.setSelection(Math.min(selection.index, maxIndex), selection.length, "silent");
+        } else {
+          quillRef.current.setSelection(0, 0, "silent");
+        }
+      },
+      getSnapshot() {
+        if (!quillRef.current) {
+          return {
+            delta: { ops: [{ insert: "\n" }] },
+            plainText: "",
+            wordCount: 0
+          };
+        }
+
+        const plainText = quillRef.current.getText().replace(/\n$/, "");
+        return {
+          delta: quillRef.current.getContents(),
+          plainText,
+          wordCount: countWords(plainText)
+        };
+      }
+    }),
+    []
+  );
 
   useEffect(() => {
-    if (!editorRef.current || quillRef.current) {
-      return;
-    }
+    if (!editorRef.current || quillRef.current) return;
 
     const quill = new Quill(editorRef.current, {
-      theme: 'snow',
+      theme: "snow",
       modules: {
         toolbar: TOOLBAR_SELECTOR,
         history: {
@@ -33,56 +74,41 @@ function Editor({ initialDelta, onContentChange }) {
           userOnly: true
         }
       },
-      placeholder: 'Start writing your document...'
+      placeholder: "Start writing your document..."
     });
 
     quillRef.current = quill;
+    if (pendingDeltaRef.current) {
+      quill.setContents(pendingDeltaRef.current, "api");
+      pendingDeltaRef.current = null;
+    }
 
-    const onTextChange = () => {
-      if (applyingExternalDeltaRef.current) {
-        return;
-      }
-      const delta = quill.getContents();
-      const text = quill.getText().replace(/\n$/, '');
-      onContentChange({
-        delta,
-        text,
-        words: countWords(text)
+    const publishSnapshot = () => {
+      const plainText = quill.getText().replace(/\n$/, "");
+
+      onContentChange?.({
+        delta: quill.getContents(),
+        plainText,
+        wordCount: countWords(plainText)
       });
     };
 
-    quill.on('text-change', onTextChange);
-
-    const handleUndo = () => quill.history.undo();
-    const handleRedo = () => quill.history.redo();
-
-    window.addEventListener('manjaword:undo', handleUndo);
-    window.addEventListener('manjaword:redo', handleRedo);
+    quill.on("text-change", publishSnapshot);
+    publishSnapshot();
 
     return () => {
-      window.removeEventListener('manjaword:undo', handleUndo);
-      window.removeEventListener('manjaword:redo', handleRedo);
-      quill.off('text-change', onTextChange);
+      quill.off("text-change", publishSnapshot);
       quillRef.current = null;
     };
   }, [onContentChange]);
 
-  useEffect(() => {
-    const quill = quillRef.current;
-    if (!quill || !initialDelta) {
-      return;
-    }
-
-    applyingExternalDeltaRef.current = true;
-    quill.setContents(initialDelta, 'silent');
-    applyingExternalDeltaRef.current = false;
-  }, [initialDelta]);
-
   return (
     <div className="editor-wrapper">
-      <div ref={editorRef} className="editor-surface" />
+      <article className="editor-page">
+        <div ref={editorRef} className="editor-surface" />
+      </article>
     </div>
   );
-}
+});
 
 export default Editor;
